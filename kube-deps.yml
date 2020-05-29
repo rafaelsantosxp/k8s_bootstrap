@@ -1,0 +1,149 @@
+- hosts: 
+    workers
+    master
+  become_user: root
+  become: yes
+  tasks:
+    - name: criando pasta docker no /etc 
+      file:
+        path: /etc/docker
+        state: directory
+        mode: 0755
+        
+    - name: Insert DNS Settings
+      lineinfile: dest=/etc/hosts line={{ item }}
+      with_items:
+       - '10.64.114.160 r01.k8s.rls'
+       - '10.64.114.161 r02.k8s.rls'
+       - '10.64.114.162 r03.k8s.rls'
+       - '10.64.114.163 r04.k8s.rls'
+       - '10.64.114.164 r05.k8s.rls'
+
+
+    - block:
+        - name: Stop and disable firewalld.
+          service:
+            name: firewalld
+            state: stopped
+            enabled: False
+
+        - name: instalando dependencias - CentOS
+          yum:
+            name: ['yum-utils', 'device-mapper-persistent-data', 'lvm2']
+            state: present
+            update_cache: true
+
+        - name: add repo docker - CentOS
+          get_url:
+            url: https://download.docker.com/linux/centos/docker-ce.repo
+            dest: /etc/yum.repos.d/docker-ce.repo
+            mode: 0440
+
+        - name: instalando docker - CentOS
+          yum:
+            name: docker-ce-18.06.2.ce
+            state: present
+            update_cache: true
+
+        - name: adicionando os parametros de configuração do docker daemon - CentOS
+          blockinfile:
+            dest: /etc/docker/daemon.json
+            marker: ''
+            create: yes
+            block: |
+              {
+                "exec-opts": ["native.cgroupdriver=systemd"],
+                "log-driver": "json-file",
+                "log-opts": {
+                  "max-size": "100m"
+                },
+                "storage-driver": "overlay2",
+                "storage-opts": [
+                  "overlay2.override_kernel_check=true"
+                ]
+              }
+   
+        - name: desabilita SELinux - CentOS
+          shell: setenforce 0
+          ignore_errors: True
+        - name: desabilita SELinux on reboot - CentOS
+          selinux:
+            state: disabled
+
+        - name: add repositorio YUM Kubernetes - CentOS
+          yum_repository:
+           name: Kubernetes
+           description: Kubernetes YUM repository
+           baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+           gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+           gpgcheck: yes
+      when: ansible_os_family == "RedHat"
+   
+    - name: criando a pasta docker no systemd
+      file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+        mode: 0755
+
+    - name: Disable SWAP since kubernetes can't work with swap enabled (1/2)
+      shell: |
+       swapoff -a
+    - name: Disable SWAP in fstab since kubernetes can't work with swap enabled (2/2)
+      replace:
+       path: /etc/fstab
+       regexp: '(\/.*swap.*0)'
+       replace: '# \1'
+
+    - name: start Docker
+      systemd:
+        state: started
+        daemon_reload: yes
+        name: docker
+
+    - name: garantindo que net.bridge.bridge-nf-call-ip6tables esteja setada como 1
+      sysctl:
+       name: net.bridge.bridge-nf-call-ip6tables
+       value: 1
+       state: present
+
+    - name: grantindo net.bridge.bridge-nf-call-iptables esteja setada como 1
+      sysctl:
+       name: net.bridge.bridge-nf-call-iptables
+       value: 1
+       state: present
+
+    - name: instalando kubelet e kubeadm
+      yum:
+        name: ['kubelet', 'kubeadm']
+        state: present
+        update_cache: true
+      when: ansible_os_family == "RedHat"
+    
+    - name: start kubelet
+      service:
+        name: kubelet
+        enabled: yes
+        state: started
+
+- hosts: master
+  become: yes
+  become_user: root
+  tasks:
+   - name: instalando kubectl
+     yum:
+        name: kubectl
+        state: present
+     when: ansible_os_family == "RedHat"
+
+
+- hosts: 
+    master
+    workers
+  become: yes
+  become_user: root
+  tasks:
+   - name: reboot
+     command: shutdown -r +1
+     async: 0
+     poll: 0
+     ignore_errors: true
