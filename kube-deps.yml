@@ -13,11 +13,9 @@
     - name: Insert DNS Settings
       lineinfile: dest=/etc/hosts line={{ item }}
       with_items:
-       - '10.64.114.160 r01.k8s.rls'
-       - '10.64.114.161 r02.k8s.rls'
-       - '10.64.114.162 r03.k8s.rls'
-       - '10.64.114.163 r04.k8s.rls'
-       - '10.64.114.164 r05.k8s.rls'
+       - '192.168.0.13 nemesis.tvirus.re'
+       - '192.168.0.14 zombie.tvirus.re'
+       - '192.168.0.16 licker.tvirus.re'
 
 
     - block:
@@ -134,7 +132,11 @@
         name: kubectl
         state: present
      when: ansible_os_family == "RedHat"
-
+   
+   - name: enable services
+     systemd:
+      name: docker
+      enabled: yes
 
 - hosts: 
     master

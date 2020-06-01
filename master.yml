@@ -1,11 +1,11 @@
 - hosts: master
   become: yes
   tasks:
-    - name: initialize the cluster
-      shell: kubeadm init --pod-network-cidr=10.244.0.0/16 >> cluster_initialized.txt
+    - name: initialize the cluster kubernetes
+      shell: sudo kubeadm init --pod-network-cidr=10.244.0.0/16 >> cluster_initialize.txt
       args:
         chdir: $HOME
-        creates: cluster_initialized.txt
+        creates: cluster_initialize.txt
 
     - name: create .kube directory
       become: yes
